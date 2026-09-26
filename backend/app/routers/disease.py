@@ -30,6 +30,19 @@ def list_entries(
     return PageResult(items=items, total=total, page=page, size=size)
 
 
+@router.get("/stats")
+def stats() -> dict[str, Any]:
+    """统计卡数据：与列表、详情读同一份记录，刷新后口径不回退。"""
+    return {"items": service.stats()}
+
+
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出病害登记清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "disease", "total": total, "items": items}
+
+
 @router.get("/{entry_id}", response_model=dict)
 def get_entry(entry_id: int) -> dict:
     """读取单条病害记录明细；不存在时给出可读的错误说明。"""
@@ -50,16 +63,13 @@ def create_entry(payload: EntryPayload) -> ActionResult:
 
 @router.post("/{entry_id}/actions", response_model=ActionResult)
 def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
-    """对单条病害记录执行确认定级、提交闭环、挂起病害；不允许的动作会被拦下并说明原因。"""
+    """对单条病害记录执行确认定级、提交闭环、挂起病害。
+
+    挂起病害必须带挂起理由；已闭环的记录不能再挂起；确认定级时定级结论（严重等级）
+    留空会沿用上一次生效的值，并在返回信息里点明。不允许的动作会被拦下并说明原因。
+    """
     action = str(payload.values.get("action") or "").strip()
-    entry, message = service.run_action(entry_id, action)
+    entry, message = service.run_action(entry_id, action, payload.values)
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
-
-
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出病害登记清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "disease", "total": total, "items": items}
